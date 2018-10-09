@@ -19,4 +19,4 @@ def test_avclass_labeler_subprocess():
     params = ['python', avclass_labeler_bin(), '-lb', 'data/malheurReference_lb.json', '-v', '-fam']
     output, err = call_with_output(params)
     err = err.split('\n')
-    assert err[-4].find('[-] Samples: 3131 NoLabels:') != -1, "err=%s" % err
+    assert err[-4].find('[-] Samples: 3_31 NoLabels:') != -1, "err=%s" % err
