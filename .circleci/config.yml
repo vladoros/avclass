@@ -11,6 +11,6 @@ jobs:
       - run:
           name: executing pytest
           command: |
-            docker run --rm -ti --entrypoint="" avclass bash -c "pip install pytest && pytest" || FAILED="TRUE"
+            docker run --rm -ti --entrypoint="" avclass "pip install pytest && pytest" || FAILED="TRUE"
             if [[ -z "$FAILED" ]] ; then
                exit 0;
