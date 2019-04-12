@@ -1,7 +1,4 @@
 #!/usr/bin/env python2
-'''
-AVClass labeler
-'''
 
 import os
 import sys
@@ -14,11 +11,15 @@ from operator import itemgetter
 import evaluate_clustering as ec
 import json
 import traceback
+'''
+AVClass labeler
+'''
 
 # Default alias file
 default_alias_file = os.path.join(path, "data/default.aliases")
 # Default generic tokens file
 default_gen_file = os.path.join(path, "data/default.generics")
+
 
 def guess_hash(h):
     '''Given a hash string, guess the hash type based on the string length'''
@@ -31,6 +32,7 @@ def guess_hash(h):
         return 'sha256'
     else:
         return None
+
 
 def main(args):
     # Select hash used to identify sample, by default MD5
@@ -53,18 +55,28 @@ def main(args):
     # Build list of input files
     # NOTE: duplicate input files are not removed
     ifile_l = []
+    ifile_are = False
     if (args.vt):
         ifile_l += args.vt
-        ifile_are_vt = True
+        ifile_are = True
+    if (args.md):
+        ifile_l += args.md
+        ifile_are = True
     if (args.lb):
         ifile_l += args.lb
-        ifile_are_vt = False
-    if (args.vtdir): 
-        ifile_l += [os.path.join(args.vtdir, f) for f in os.listdir(args.vtdir)]
-        ifile_are_vt = True
+    if (args.mddir):
+        ifile_l += [os.path.join(args.mddir, f)
+                    for f in os.listdir(args.mddir)]
+        ifile_are = True
+        ifile_are = False
+    if (args.vtdir):
+        ifile_l += [os.path.join(args.vtdir, f)
+                    for f in os.listdir(args.vtdir)]
+        ifile_are = True
     if (args.lbdir):
-        ifile_l += [os.path.join(args.lbdir, f) for f in os.listdir(args.lbdir)]
-        ifile_are_vt = False
+        ifile_l += [os.path.join(args.lbdir, f)
+                    for f in os.listdir(args.lbdir)]
+        ifile_are = False
 
     # Select output prefix
     out_prefix = os.path.basename(os.path.splitext(ifile_l[0])[0])
@@ -80,8 +92,8 @@ def main(args):
     pair_count_map = {}
     token_family_map = {}
     fam_stats = {}
-    vt_all = 0
-    vt_empty = 0
+    all = 0
+    empty = 0
     singletons = 0
 
     # Process each input file
@@ -100,34 +112,39 @@ def main(args):
                 continue
 
             # Debug info
-            if vt_all % 100 == 0:
-                sys.stderr.write('\r[-] %d JSON read' % vt_all)
+            if all % 100 == 0:
+                sys.stderr.write('\r[-] %d JSON read\n' % all)
                 sys.stderr.flush()
-            vt_all += 1
+            all += 1
 
             # Read JSON line and extract sample info (i.e., hashes and labels)
-            vt_rep = json.loads(line)
-            sample_info = av_labels.get_sample_info(vt_rep, ifile_are_vt)
+            rep = json.loads(line)
+            line = rep.copy()
+            from_vt = True if (args.vt or args.vtdir) else False
+            sample_info = av_labels.get_sample_info(rep, ifile_are, from_vt)
             if sample_info is None:
                 try:
-                    name = vt_rep['md5']
+                    if from_vt:
+                        name = line['md5']
+                    else:
+                        name = line['hash']
                     sys.stderr.write('\nNo AV labels for %s\n' % name)
                 except KeyError:
                     sys.stderr.write('\nCould not process: %s\n' % line)
                 sys.stderr.flush()
-                vt_empty += 1
+                empty += 1
                 continue
 
             # Sample's name is selected hash type (md5 by default)
             name = getattr(sample_info, hash_type)
 
-            # If the VT report has no AV labels, continue
+            # If the report has no AV labels, continue
             if not sample_info[3]:
-                vt_empty += 1
+                empty += 1
                 sys.stderr.write('\nNo AV labels for %s\n' % name)
                 sys.stderr.flush()
                 continue
-            
+
             # Get the distinct tokens from all the av labels in the report
             # And print them. If not verbose, print the first token.
             # If verbose, print the whole list
@@ -147,9 +164,9 @@ def main(args):
                             token_count_map[curr_tok] = 1
                         for prev_tok in prev_tokens:
                             if prev_tok < curr_tok:
-                                pair = (prev_tok,curr_tok) 
-                            else: 
-                                pair = (curr_tok,prev_tok)
+                                pair = (prev_tok, curr_tok)
+                            else:
+                                pair = (curr_tok, prev_tok)
                             pair_count = pair_count_map.get(pair)
                             if pair_count:
                                 pair_count_map[pair] = pair_count + 1
@@ -186,7 +203,7 @@ def main(args):
                         is_pup_str = "\t0"
                 else:
                     is_pup = None
-                    is_pup_str =  ""
+                    is_pup_str = ""
 
                 # Build family map for precision, recall, computation
                 first_token_dict[name] = family
@@ -200,7 +217,7 @@ def main(args):
                 # Print family (and ground truth if available) to stdout
                 print '%s\t%s%s%s' % (name, family, gt_family, is_pup_str)
 
-                # If verbose, print tokens (and ground truth if available) 
+                # If verbose, print tokens (and ground truth if available)
                 # to log file
                 if args.verbose:
                     verb_fd.write('%s\t%s%s%s\n' % (
@@ -232,7 +249,7 @@ def main(args):
                 continue
 
         # Debug info
-        sys.stderr.write('\r[-] %d JSON read' % vt_all)
+        sys.stderr.write('\r[-] %d JSON read' % all)
         sys.stderr.flush()
         sys.stderr.write('\n')
 
@@ -241,18 +258,18 @@ def main(args):
 
     # Print statistics
     sys.stderr.write(
-            "[-] Samples: %d NoLabels: %d Singletons: %d "
-            "GroundTruth: %d\n" % (
-                vt_all, vt_empty, singletons, len(gt_dict)))
+        "[-] Samples: %d NoLabels: %d Singletons: %d "
+        "GroundTruth: %d\n" % (
+            all, empty, singletons, len(gt_dict)))
 
     # If ground truth, print precision, recall, and F1-measure
     if args.gt and args.eval:
         precision, recall, fmeasure = \
-                    ec.eval_precision_recall_fmeasure(gt_dict,
-                                                      first_token_dict)
-        sys.stderr.write( \
-            "Precision: %.2f\tRecall: %.2f\tF1-Measure: %.2f\n" % \
-                          (precision, recall, fmeasure))
+            ec.eval_precision_recall_fmeasure(gt_dict,
+                                              first_token_dict)
+        sys.stderr.write(
+            "Precision: %.2f\tRecall: %.2f\tF1-Measure: %.2f\n" %
+            (precision, recall, fmeasure))
 
     # If generic token detection, print map
     if args.gendetect:
@@ -261,10 +278,10 @@ def main(args):
         gen_fd = open(gen_filename, 'w+')
         # Output header line
         gen_fd.write("Token\t#Families\n")
-        sorted_pairs = sorted(token_family_map.iteritems(), 
-                              key=lambda x: len(x[1]) if x[1] else 0, 
+        sorted_pairs = sorted(token_family_map.iteritems(),
+                              key=lambda x: len(x[1]) if x[1] else 0,
                               reverse=True)
-        for (t,fset) in sorted_pairs:
+        for (t, fset) in sorted_pairs:
             gen_fd.write("%s\t%d\n" % (t, len(fset)))
 
         # Close generic tokens file
@@ -278,11 +295,11 @@ def main(args):
         alias_fd = open(alias_filename, 'w+')
         # Sort token pairs by number of times they appear together
         sorted_pairs = sorted(
-                pair_count_map.items(), key=itemgetter(1))
+            pair_count_map.items(), key=itemgetter(1))
         # Output header line
         alias_fd.write("# t1\tt2\t|t1|\t|t2|\t|t1^t2|\t|t1^t2|/|t1|\n")
         # Compute token pair statistic and output to alias file
-        for (t1,t2),c in sorted_pairs:
+        for (t1, t2), c in sorted_pairs:
             n1 = token_count_map[t1]
             n2 = token_count_map[t2]
             if (n1 < n2):
@@ -297,7 +314,7 @@ def main(args):
                 yn = n1
             f = float(c) / float(xn)
             alias_fd.write("%s\t%s\t%d\t%d\t%d\t%0.2f\n" % (
-                x,y,xn,yn,c,f))
+                x, y, xn, yn, c, f))
         # Close alias file
         alias_fd.close()
         sys.stderr.write('[-] Alias data in %s\n' % (alias_filename))
@@ -316,14 +333,14 @@ def main(args):
         sorted_pairs = sorted(fam_stats.items(), key=itemgetter(1),
                               reverse=True)
         # Print map contents
-        for (f,fstat) in sorted_pairs:
+        for (f, fstat) in sorted_pairs:
             if args.pup:
                 if fstat[1] > fstat[2]:
                     famType = "malware"
                 else:
                     famType = "pup"
                 fam_fd.write("%s\t%d\t%d\t%d\t%s\n" % (f, fstat[0], fstat[1],
-                                                fstat[2], famType))
+                                                       fstat[2], famType))
             else:
                 fam_fd.write("%s\t%d\n" % (f, fstat[0]))
         # Close file
@@ -336,80 +353,86 @@ def main(args):
         verb_fd.close()
 
 
-
-if __name__=='__main__':
+if __name__ == '__main__':
     argparser = argparse.ArgumentParser(prog='avclass_labeler',
-        description='''Extracts the family of a set of samples.
+                                        description='''Extracts the family of a set of samples.
             Also calculates precision and recall if ground truth available''')
 
+    argparser.add_argument('-md', action='append',
+                           help='file with MD reports '
+                           '(Can be provided multiple times)')
+
     argparser.add_argument('-vt', action='append',
-        help='file with VT reports '
-             '(Can be provided multiple times)')
+                           help='file with VT reports '
+                           '(Can be provided multiple times)')
 
     argparser.add_argument('-lb', action='append',
-        help='file with simplified JSON reports '
-             '{md5,sha1,sha256,scan_date,av_labels} '
-             '(Can be provided multiple times)')
+                           help='file with simplified JSON reports '
+                           '{md5,sha1,sha256,scan_date,av_labels} '
+                           '(Can be provided multiple times)')
+
+    argparser.add_argument('-mddir',
+                           help='existing directory with VT reports')
 
     argparser.add_argument('-vtdir',
-        help='existing directory with VT reports')
+                           help='existing directory with VT reports')
 
     argparser.add_argument('-lbdir',
-        help='existing directory with simplified JSON reports')
+                           help='existing directory with simplified JSON reports')
 
     argparser.add_argument('-gt',
-        help='file with ground truth')
+                           help='file with ground truth')
 
     argparser.add_argument('-eval',
-        action='store_true',
-        help='if used it evaluates clustering accuracy.'
-             ' Prints precision, recall, F1-measure. Requires -gt parameter')
+                           action='store_true',
+                           help='if used it evaluates clustering accuracy.'
+                           ' Prints precision, recall, F1-measure. Requires -gt parameter')
 
     argparser.add_argument('-alias',
-        help='file with aliases.',
-        default = default_alias_file)
+                           help='file with aliases.',
+                           default=default_alias_file)
 
     argparser.add_argument('-gen',
-        help='file with generic tokens.',
-        default = default_gen_file)
+                           help='file with generic tokens.',
+                           default=default_gen_file)
 
     argparser.add_argument('-av',
-        help='file with list of AVs to use')
+                           help='file with list of AVs to use')
 
     argparser.add_argument('-pup',
-        action='store_true',
-        help='if used each sample is classified as PUP or not')
+                           action='store_true',
+                           help='if used each sample is classified as PUP or not')
 
     argparser.add_argument('-gendetect',
-        action='store_true',
-        help='if used produce generics file at end. Requires -gt parameter')
+                           action='store_true',
+                           help='if used produce generics file at end. Requires -gt parameter')
 
     argparser.add_argument('-aliasdetect',
-        action='store_true',
-        help='if used produce aliases file at end')
+                           action='store_true',
+                           help='if used produce aliases file at end')
 
     argparser.add_argument('-v', '--verbose',
-        action='store_true',
-        help='output .verbose file with distinct tokens')
+                           action='store_true',
+                           help='output .verbose file with distinct tokens')
 
     argparser.add_argument('-hash',
-        help='hash used to name samples. Should match ground truth',
-        choices=['md5', 'sha1', 'sha256'])
+                           help='hash used to name samples. Should match ground truth',
+                           choices=['md5', 'sha1', 'sha256'])
 
     argparser.add_argument('-fam',
-        action='store_true',
-        help='if used produce families file with PUP/malware counts per family')
+                           action='store_true',
+                           help='if used produce families file with PUP/malware counts per family')
 
     args = argparser.parse_args()
 
-    if not args.vt and not args.lb and not args.vtdir and not args.lbdir:
+    if not args.md and not args.vt and not args.lb and not args.mddir and not args.vtdir and not args.lbdir:
         sys.stderr.write('One of the following 4 arguments is required: '
-                          '-vt,-lb,-vtdir,-lbdir\n')
+                         '-md,-vt,-lb,-mddir,-vtdir,-lbdir\n')
         exit(1)
 
-    if (args.vt or args.vtdir) and (args.lb or args.lbdir):
-        sys.stderr.write('Use either -vt/-vtdir or -lb/-lbdir. '
-                          'Both types of input files cannot be combined.\n')
+    if (args.vt or args.vtdir) and (args.md or args.mddir) and (args.lb or args.lbdir):
+        sys.stderr.write('Use either  -md/-mddir, -vt/-vtdir or -lb/-lbdir. '
+                         'Both types of input files cannot be combined.\n')
         exit(1)
 
     if args.gendetect and not args.gt:
@@ -426,10 +449,10 @@ if __name__=='__main__':
             args.alias = None
         else:
             sys.stderr.write('[-] Using aliases in %s\n' % (
-                              args.alias))
+                args.alias))
     else:
         sys.stderr.write('[-] Using generic aliases in %s\n' % (
-                          default_alias_file))
+            default_alias_file))
 
     if args.gen:
         if args.gen == '/dev/null':
@@ -437,9 +460,9 @@ if __name__=='__main__':
             args.gen = None
         else:
             sys.stderr.write('[-] Using generic tokens in %s\n' % (
-                              args.gen))
+                args.gen))
     else:
         sys.stderr.write('[-] Using default generic tokens in %s\n' % (
-                          default_gen_file))
-        
+            default_gen_file))
+
     main(args)

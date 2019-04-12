@@ -1,2 +1,5 @@
 *.pyc
 .cache/
+.vscode
+malheurReference_lb.verbose
+malheurReference.labels

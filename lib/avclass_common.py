@@ -9,15 +9,20 @@ from collections import OrderedDict as OrdDict
 from collections import namedtuple
 from operator import itemgetter, attrgetter
 
-SampleInfo = namedtuple('SampleInfo', 
+SampleInfo = namedtuple('SampleInfo',
                         ['md5', 'sha1', 'sha256', 'labels'])
+
+AVList = ["Vir_IT eXplorer", "Vir_IT ML", "Zillya!", "Xvirus Personal Guard", "VirusBlokAda", "TrendMicro House Call", "TrendMicro", "Total Defense", "ThreatTrack", "TACHYON", "Sophos", "SUPERAntiSpyware", "Quick Heal", "Preventon",
+          "NANOAV", "McAfee", "K7", "Ikarus", "Huorong", "Hauri", "Fortinet", "Filseclab", "F-secure", "F-prot", "Emsisoft", "ESET", "Cyren", "ClamAV", "ByteHero", "BitDefender", "Avira", "Antiy", "Ahnlab", "Agnitum", "AegisLab"]
+
 
 class AvLabels:
     '''
     Class to operate on AV labels, 
     such as extracting the most likely family name.
     '''
-    def __init__(self, gen_file = None, alias_file = None, av_file = None):
+
+    def __init__(self, gen_file=None, alias_file=None, av_file=None):
 
         # Read generic token set from file
         self.gen_set = self.read_generics(gen_file) if gen_file else set()
@@ -62,27 +67,42 @@ class AvLabels:
         return avs
 
     @staticmethod
-    def get_sample_info(vt_rep, from_vt):
+    def get_sample_info(rep, origin, from_vt):
         '''Parse and extract sample information from JSON line
            Returns a SampleInfo named tuple: md5, sha1, sha256, label_pairs 
         '''
         label_pairs = []
-        if from_vt:
-            try:
-                scans = vt_rep['scans']
-            except KeyError:
-                return None
-            for av, res in scans.items():
-                if res['detected']:
-                    label = res['result']
-                    clean_label = filter(lambda x: x in string.printable, 
-                                      label).strip().encode('utf-8').strip()
-                    label_pairs.append((av, clean_label))
-        else:
-            label_pairs = vt_rep['av_labels']
+        if origin:
+            if from_vt:
+                try:
+                    scans = rep['scans']
+                except KeyError:
+                    return None
+                for av, res in scans.items():
+                    if res['detected']:
+                        label = res['result']
+                        clean_label = filter(lambda x: x in string.printable,
+                                            label).strip().encode('utf-8').strip()
+                        label_pairs.append((av, clean_label))
+            else:
+                try:
+                    scans = rep['scan_results']['scan_details']
+                except KeyError:
+                    return None
+                for av, res in scans.items():
+                    if int(res['scan_result_i']) > 0:
+                        label = res['threat_found']
+                        clean_label = filter(lambda x: x in string.printable,
+                                            label).strip().encode('utf-8').strip()
+                        label_pairs.append((av, clean_label))
 
-        return SampleInfo(vt_rep['md5'], vt_rep['sha1'], vt_rep['sha256'],
-                          label_pairs) 
+                return SampleInfo(rep['file_info']['md5'], rep['file_info']['sha1'], rep['file_info']['sha256'],
+                        label_pairs)
+        else:
+            label_pairs = rep['av_labels']
+
+        return SampleInfo(rep['md5'], rep['sha1'], rep['sha256'],
+                          label_pairs)
 
     @staticmethod
     def is_pup(av_label_pairs):
@@ -102,9 +122,10 @@ class AvLabels:
         pup = False
         threshold = 0.5
         # AVs to use
-        av_set = set(['Malwarebytes', 'K7AntiVirus', 'Avast',
-                  'AhnLab-V3', 'Kaspersky', 'K7GW', 'Ikarus',
-                  'Fortinet', 'Antiy-AVL', 'Agnitum', 'ESET-NOD32'])
+        # av_set = set(['Malwarebytes', 'K7AntiVirus', 'Avast',
+        #               'AhnLab-V3', 'Kaspersky', 'K7GW', 'Ikarus',
+        #               'Fortinet', 'Antiy-AVL', 'Agnitum', 'ESET-NOD32'])
+        av_set = set(AVList)
         # Tags that indicate PUP
         tags = set(['PUA', 'Adware', 'PUP', 'Unwanted', 'Riskware', 'grayware',
                     'Unwnt', 'Adknowledge', 'toolbar', 'casino', 'casonline',
@@ -127,21 +148,16 @@ class AvLabels:
             pup = True
         return pup
 
-
     @staticmethod
     def __remove_suffixes(av_name, label):
         '''Remove AV specific suffixes from given label
            Returns updated label'''
 
         # Truncate after last '.'
-        if av_name in set(['Norman', 'Avast', 'Avira', 'Kaspersky',
-                          'ESET-NOD32', 'Fortinet', 'Jiangmin', 'Comodo',
-                          'GData', 'Avast', 'Sophos',
-                          'TrendMicro-HouseCall', 'TrendMicro',
-                          'NANO-Antivirus', 'Microsoft']):
+        if av_name in set(AVList):
             label = label.rsplit('.', 1)[0]
 
-        # Truncate after last '.' 
+        # Truncate after last '.'
         # if suffix only contains digits or uppercase (no lowercase) chars
         if av_name == 'AVG':
             tokens = label.rsplit('.', 1)
@@ -149,7 +165,7 @@ class AvLabels:
                 label = tokens[0]
 
         # Truncate after last '!'
-        if av_name in set(['Agnitum','McAffee','McAffee-GW-Edition']):
+        if av_name in set(['Agnitum', 'McAffee', 'McAffee-GW-Edition']):
             label = label.rsplit('!', 1)[0]
 
         # Truncate after last '('
@@ -158,12 +174,11 @@ class AvLabels:
 
         # Truncate after last '@'
         # GData would belong here, but already trimmed earlier
-        if av_name in set(['Ad-Aware', 'BitDefender', 'Emsisoft', 'F-Secure', 
-                          'Microworld-eScan']):
+        if av_name in set(['Ad-Aware', 'BitDefender', 'Emsisoft', 'F-Secure',
+                           'Microworld-eScan']):
             label = label.rsplit('(', 1)[0]
 
         return label
-
 
     def __normalize(self, label, hashes):
         '''Tokenize label, filter tokens, and replace aliases'''
@@ -193,20 +208,20 @@ class AvLabels:
             if token in self.gen_set:
                 continue
 
-            # Ignore token if prefix of a hash of the sample 
-            # Most AVs use MD5 prefixes in labels, 
+            # Ignore token if prefix of a hash of the sample
+            # Most AVs use MD5 prefixes in labels,
             # but we check SHA1 and SHA256 as well
             hash_token = False
             for hash_str in hashes:
                 if hash_str[0:len(token)] == token:
-                  hash_token = True
-                  break
+                    hash_token = True
+                    break
             if hash_token:
                 continue
 
             # Replace alias
             token = self.aliases_map[token] if token in self.aliases_map \
-                                            else token
+                else token
 
             # Add token
             ret.append(token)
@@ -218,7 +233,7 @@ class AvLabels:
         '''
         # Extract info from named tuple
         av_label_pairs = sample_info[3]
-        hashes = [ sample_info[0], sample_info[1], sample_info[2] ]
+        hashes = [sample_info[0], sample_info[1], sample_info[2]]
 
         # Whitelist the AVs to filter the ones with meaningful labels
         av_whitelist = self.avs
@@ -272,9 +287,9 @@ class AvLabels:
         ##################################################################
         # Token ranking: sorts tokens by decreasing count and then token #
         ##################################################################
-        sorted_tokens = sorted(token_map.iteritems(), 
-                                key=itemgetter(1,0), 
-                                reverse=True)
+        sorted_tokens = sorted(token_map.iteritems(),
+                               key=itemgetter(1, 0),
+                               reverse=True)
 
         # Delete the tokens appearing only in one AV, add rest to output
         sorted_dict = OrdDict()
@@ -283,6 +298,5 @@ class AvLabels:
                 sorted_dict[t] = c
             else:
                 break
-        
-        return sorted_dict
 
+        return sorted_dict
