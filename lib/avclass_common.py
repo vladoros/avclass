@@ -90,10 +90,10 @@ class AvLabels:
                 except KeyError:
                     return None
                 for av, res in scans.items():
-                    if int(res['scan_result_i']) > 0:
+                    if int(res['scan_result_i']) > 0 and res['threat_found']:
                         label = res['threat_found']
                         clean_label = filter(lambda x: x in string.printable,
-                                            label).strip().encode('utf-8').strip()
+                                                label).strip().encode('utf-8').strip()
                         label_pairs.append((av, clean_label))
 
                 return SampleInfo(rep['file_info']['md5'], rep['file_info']['sha1'], rep['file_info']['sha256'],
@@ -159,7 +159,7 @@ class AvLabels:
 
         # Truncate after last '.'
         # if suffix only contains digits or uppercase (no lowercase) chars
-        if av_name == 'AVG':
+        if av_name in set(['AVG', 'Quick Heal', 'ClamAV', 'Zillya!']):
             tokens = label.rsplit('.', 1)
             if len(tokens) > 1 and re.match("^[A-Z0-9]+$", tokens[1]):
                 label = tokens[0]
@@ -169,7 +169,7 @@ class AvLabels:
             label = label.rsplit('!', 1)[0]
 
         # Truncate after last '('
-        if av_name in set(['K7AntiVirus', 'K7GW']):
+        if av_name in set(['K7','K7AntiVirus', 'K7GW']):
             label = label.rsplit('(', 1)[0]
 
         # Truncate after last '@'
@@ -291,12 +291,12 @@ class AvLabels:
                                key=itemgetter(1, 0),
                                reverse=True)
 
-        # Delete the tokens appearing only in one AV, add rest to output
         sorted_dict = OrdDict()
         for t, c in sorted_tokens:
-            if c > 1:
+            # Deletes the tokens appearing only in one AV, add rest to output
+            # if c > 1:
                 sorted_dict[t] = c
-            else:
-                break
+            # else:
+                # break
 
         return sorted_dict
