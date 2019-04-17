@@ -3,3 +3,7 @@
 .vscode
 malheurReference_lb.verbose
 malheurReference.labels
+# data/*.json
+*.families
+*.verbose
+*.log
